@@ -137,7 +137,7 @@ struct NeuralNetwork{
     OutputLayer output;
     vector<trainpoint> train;
     double learn;
-
+    int batchsize;
     void reset() {
         for(Neuron& n : input.Neurons) {
             n.value = 0;
@@ -154,8 +154,9 @@ struct NeuralNetwork{
         }
     }
 
-    NeuralNetwork(vector<int> structure,vector<trainpoint> training_data,double learnrate)
+    NeuralNetwork(vector<int> structure,vector<trainpoint> training_data,double learnrate,int batch_size)
     {
+        batchsize = batch_size;
         learn = learnrate;
         train = training_data;
         input = Layer(0,structure[0]);
@@ -289,22 +290,105 @@ struct NeuralNetwork{
             cout << "EPOCH : " << i << ", LOSS : " << getLoss() << endl;
         }
     }
+
+    double getBatchLoss(int start_idx, int batch_size) 
+    {
+        double res = 0;
+        int end_idx = min(start_idx + batch_size, (int)train.size());
+        
+        for(int i = start_idx; i < end_idx; i++)
+        {
+            double crntloss = pointloss(train[i]);
+            res += crntloss;
+        }
+        return res / (end_idx - start_idx);
+    }
+
+    double getBatchGradient(double& weight, int start_idx, int batch_size)
+    {
+        double h = 0.001;
+        double original = weight;
+        
+        double loss1 = getBatchLoss(start_idx, batch_size);
+        weight = original + h;
+        double loss2 = getBatchLoss(start_idx, batch_size);
+        weight = original;
+        
+        return (loss2 - loss1) / h;
+    }
+
+    void adjustBatch(int start_idx, int batch_size)
+    {
+        for(int i = 0; i < hidden.size(); ++i) {
+            for(int j = 0; j < hidden[i].weights.size(); ++j) {
+                for(int k = 0; k < hidden[i].weights[j].size(); ++k) {
+                    double gradient = getBatchGradient(hidden[i].weights[j][k], start_idx, batch_size);
+                    hidden[i].weights[j][k] -= gradient * learn;
+                }
+            }
+        }
+
+        for(int i = 0; i < output.weights.size(); i++) {
+            for(int j = 0; j < output.weights[i].size(); j++) {
+                double gradient = getBatchGradient(output.weights[i][j], start_idx, batch_size);
+                output.weights[i][j] -= learn * gradient;
+            }
+        }
+
+        for(int i = 0; i < hidden.size(); ++i) {
+            for(int j = 0; j < hidden[i].Neurons.size(); ++j) {
+                double gradient = getBatchGradient(hidden[i].Neurons[j].bias, start_idx, batch_size);
+                hidden[i].Neurons[j].bias -= learn * gradient;
+            }
+        }
+
+        for(int i = 0; i < output.Neurons.size(); ++i) {
+            double gradient = getBatchGradient(output.Neurons[i].bias, start_idx, batch_size);
+            output.Neurons[i].bias -= learn * gradient;
+        }
+    }
+
+    void trainnetworkbatching(int epochs) 
+    {
+        for(int epoch = 0; epoch < epochs; ++epoch)
+        {
+            for(int batch_start = 0; batch_start < train.size(); batch_start += batchsize) 
+            {
+                adjustBatch(batch_start, batchsize);
+            }
+            cout << "EPOCH: " << epoch << ", LOSS: " << getLoss() << endl;
+        }
+    }
 };
 
 int main()
 {
     vector<trainpoint> training_data = {
         {0.1, 0.2, false},
-        {0.8, 0.9, true},  
         {0.3, 0.1, false},  
-        {0.7, 0.8, true},   
-        {0.2, 0.3, false},  
-        {0.6, 0.7, true}
+        {0.2, 0.3, false},
+        {0.05, 0.15, false},
+        {0.15, 0.25, false},
+        {0.25, 0.05, false},
+        {0.12, 0.18, false},
+        {0.08, 0.28, false},
+        {0.28, 0.12, false},
+        {0.18, 0.22, false},
+        {0.8, 0.9, true},
+        {0.7, 0.8, true},
+        {0.6, 0.7, true},
+        {0.75, 0.85, true},
+        {0.65, 0.75, true},
+        {0.85, 0.65, true},
+        {0.72, 0.78, true},
+        {0.68, 0.82, true},
+        {0.82, 0.68, true},
+        {0.78, 0.72, true}
     };
 
-    NeuralNetwork nn = NeuralNetwork({2,3,2},training_data,0.2);
+    NeuralNetwork nn = NeuralNetwork({2,3,2},training_data,0.2,4);
     nn.initWB();
-    nn.trainnetwork(100);
+    nn.trainnetworkbatching(100);
 
     trainpoint test = {0.75, 0.85, true};
     cout << "Pointloss : " << nn.pointloss(test) << endl;
