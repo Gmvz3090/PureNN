@@ -1,0 +1,374 @@
+#ifndef PURENN_H
+#define PURENN_H
+
+#include <vector>
+#include <cmath>
+#include <iostream>
+#include <algorithm>
+
+namespace purenn {
+
+struct Neuron {
+    double value = 0;
+    double bias = 0;
+    
+    void activateSigm() {
+        value = 1.0 / (1.0 + std::exp(-value));
+    }
+};
+
+struct Layer {
+    std::vector<Neuron> Neurons;
+    std::vector<std::vector<double>> weights; 
+    int outNodes;
+    int inNodes;
+
+    Layer() : inNodes(0), outNodes(0) {}
+
+    Layer(int in, int out) {
+        Neurons.resize(out);
+        inNodes = in;
+        outNodes = out;
+        if(in > 0) {
+            weights.resize(in, std::vector<double>(out));
+        }
+    }
+
+    void setup(int in, int out) {
+        Neurons.resize(out);
+        inNodes = in;
+        outNodes = out;
+        if(in > 0) {
+            weights.resize(in, std::vector<double>(out));
+        }
+    }
+
+    void CalcLayer(const Layer& PrevLayer) {
+        for(size_t i = 0; i < Neurons.size(); ++i) {
+            Neurons[i].value = 0;
+            for(size_t j = 0; j < PrevLayer.Neurons.size(); ++j) {
+                Neurons[i].value += PrevLayer.Neurons[j].value * weights[j][i];
+            }
+            Neurons[i].value += Neurons[i].bias;
+            Neurons[i].activateSigm();
+        }
+    }
+};
+
+struct OutputLayer {
+    std::vector<Neuron> Neurons;
+    std::vector<std::vector<double>> weights; 
+    int outNodes;
+    int inNodes;
+
+    OutputLayer() : inNodes(0), outNodes(0) {}
+
+    OutputLayer(int in, int out) {
+        Neurons.resize(out);
+        inNodes = in;
+        outNodes = out;
+        if(in > 0) {
+            weights.resize(in, std::vector<double>(out));
+        }
+    }
+
+    void setup(int in, int out) {
+        Neurons.resize(out);
+        inNodes = in;
+        outNodes = out;
+        if(in > 0) {
+            weights.resize(in, std::vector<double>(out));
+        }
+    }
+
+    void CalcLayer(const Layer& PrevLayer) {
+        for(size_t i = 0; i < Neurons.size(); ++i) {
+            Neurons[i].value = 0;
+            for(size_t j = 0; j < PrevLayer.Neurons.size(); ++j) {
+                Neurons[i].value += PrevLayer.Neurons[j].value * weights[j][i];
+            }
+            Neurons[i].value += Neurons[i].bias;
+        }
+        
+        double sum = 0;
+        for(Neuron& n : Neurons) {
+            n.value = std::exp(n.value);
+            sum += n.value;
+        }
+        for(Neuron& n : Neurons) {
+            n.value /= sum;
+        }
+    }
+
+    double NodeCost(double expected, double actual) {
+        return (actual - expected) * (actual - expected);
+    }
+
+    double Loss(const std::vector<double>& expected) {
+        double totloss = 0;
+        for(size_t i = 0; i < Neurons.size() && i < expected.size(); ++i) {
+            totloss += NodeCost(expected[i], Neurons[i].value); 
+        }
+        return totloss;
+    }
+};
+
+struct DataPoint {
+    std::vector<double> inputs;
+    std::vector<double> expected;
+    
+    DataPoint(const std::vector<double>& in, const std::vector<double>& exp) 
+        : inputs(in), expected(exp) {}
+};
+
+struct NeuralNetwork {
+    Layer input;
+    std::vector<Layer> hidden;
+    OutputLayer output;
+    std::vector<DataPoint> train;
+    double learn;
+    int batchsize;
+
+    NeuralNetwork(const std::vector<int>& structure, 
+                  const std::vector<DataPoint>& training_data,
+                  double learnrate, int batch_size) 
+        : learn(learnrate), batchsize(batch_size), train(training_data) {
+        
+        input = Layer(0, structure[0]);
+        output = OutputLayer(structure[structure.size()-2], structure[structure.size()-1]);
+        
+        for(size_t i = 1; i < structure.size() - 1; i++) {
+            Layer hiddenlayer = Layer(structure[i-1], structure[i]);
+            hidden.push_back(hiddenlayer);
+        }
+    }
+
+    void reset() {
+        for(Neuron& n : input.Neurons) {
+            n.value = 0;
+        }
+        for(Layer& layer : hidden) {
+            for(Neuron& n : layer.Neurons) {
+                n.value = 0;
+            }
+        }
+        for(Neuron& n : output.Neurons) {
+            n.value = 0;
+        }
+    }
+
+    void setInputs(const DataPoint& dp) {
+        for(size_t i = 0; i < dp.inputs.size() && i < input.Neurons.size(); i++) {
+            input.Neurons[i].value = dp.inputs[i];
+        }
+    }
+
+    double pointloss(const DataPoint& dp) {
+        reset();
+        setInputs(dp);
+
+        if(!hidden.empty()) {
+            hidden[0].CalcLayer(input);
+            for(size_t i = 1; i < hidden.size(); i++) {
+                hidden[i].CalcLayer(hidden[i-1]);
+            }
+            output.CalcLayer(hidden[hidden.size() - 1]);
+        } else {
+            output.CalcLayer(input);
+        }
+
+        return output.Loss(dp.expected);
+    }
+
+    double getLoss() {
+        double res = 0;
+        for(const auto& tp : train) {
+            res += pointloss(tp);
+        }
+        return res / train.size();
+    }
+
+    double getBatchLoss(int start_idx, int batch_size) {
+        double res = 0;
+        int end_idx = std::min(start_idx + batch_size, (int)train.size());
+        
+        for(int i = start_idx; i < end_idx; i++) {
+            res += pointloss(train[i]);
+        }
+        return res / (end_idx - start_idx);
+    }
+
+    double getGradient(double& weight) {
+        double h = 0.001;
+        double original = weight;
+        
+        double loss1 = getLoss();
+        weight = original + h;
+        double loss2 = getLoss();
+        weight = original;
+        
+        return (loss2 - loss1) / h;
+    }
+
+    double getBatchGradient(double& weight, int start_idx, int batch_size) {
+        double h = 0.001;
+        double original = weight;
+        
+        double loss1 = getBatchLoss(start_idx, batch_size);
+        weight = original + h;
+        double loss2 = getBatchLoss(start_idx, batch_size);
+        weight = original;
+        
+        return (loss2 - loss1) / h;
+    }
+
+    void adjust() {
+        for(size_t i = 0; i < hidden.size(); ++i) {
+            for(size_t j = 0; j < hidden[i].weights.size(); ++j) {
+                for(size_t k = 0; k < hidden[i].weights[j].size(); ++k) {
+                    double gradient = getGradient(hidden[i].weights[j][k]);
+                    hidden[i].weights[j][k] -= gradient * learn;
+                }
+            }
+        }
+
+        for(size_t i = 0; i < output.weights.size(); i++) {
+            for(size_t j = 0; j < output.weights[i].size(); j++) {
+                double gradient = getGradient(output.weights[i][j]);
+                output.weights[i][j] -= learn * gradient;
+            }
+        }
+
+        for(size_t i = 0; i < hidden.size(); ++i) {
+            for(size_t j = 0; j < hidden[i].Neurons.size(); ++j) {
+                double gradient = getGradient(hidden[i].Neurons[j].bias);
+                hidden[i].Neurons[j].bias -= learn * gradient;
+            }
+        }
+
+        for(size_t i = 0; i < output.Neurons.size(); ++i) {
+            double gradient = getGradient(output.Neurons[i].bias);
+            output.Neurons[i].bias -= learn * gradient;
+        }
+    }
+
+    void adjustBatch(int start_idx, int batch_size) {
+        for(size_t i = 0; i < hidden.size(); ++i) {
+            for(size_t j = 0; j < hidden[i].weights.size(); ++j) {
+                for(size_t k = 0; k < hidden[i].weights[j].size(); ++k) {
+                    double gradient = getBatchGradient(hidden[i].weights[j][k], start_idx, batch_size);
+                    hidden[i].weights[j][k] -= gradient * learn;
+                }
+            }
+        }
+
+        for(size_t i = 0; i < output.weights.size(); i++) {
+            for(size_t j = 0; j < output.weights[i].size(); j++) {
+                double gradient = getBatchGradient(output.weights[i][j], start_idx, batch_size);
+                output.weights[i][j] -= learn * gradient;
+            }
+        }
+
+        for(size_t i = 0; i < hidden.size(); ++i) {
+            for(size_t j = 0; j < hidden[i].Neurons.size(); ++j) {
+                double gradient = getBatchGradient(hidden[i].Neurons[j].bias, start_idx, batch_size);
+                hidden[i].Neurons[j].bias -= learn * gradient;
+            }
+        }
+
+        for(size_t i = 0; i < output.Neurons.size(); ++i) {
+            double gradient = getBatchGradient(output.Neurons[i].bias, start_idx, batch_size);
+            output.Neurons[i].bias -= learn * gradient;
+        }
+    }
+
+    void trainnetwork(int epochs) {
+        for(int i = 0; i < epochs; ++i) {
+            adjust();
+            std::cout << "EPOCH: " << i << ", LOSS: " << getLoss() << std::endl;
+        }
+    }
+
+    void trainnetworkbatching(int epochs) {
+        for(int epoch = 0; epoch < epochs; ++epoch) {
+            for(int batch_start = 0; batch_start < (int)train.size(); batch_start += batchsize) {
+                adjustBatch(batch_start, batchsize);
+            }
+            std::cout << "EPOCH: " << epoch << ", LOSS: " << getLoss() << std::endl;
+        }
+    }
+
+    std::vector<double> predict(const DataPoint& dp) {
+        reset();
+        setInputs(dp);
+
+        if(!hidden.empty()) {
+            hidden[0].CalcLayer(input);
+            for(size_t i = 1; i < hidden.size(); i++) {
+                hidden[i].CalcLayer(hidden[i-1]);
+            }
+            output.CalcLayer(hidden[hidden.size() - 1]);
+        } else {
+            output.CalcLayer(input);
+        }
+
+        std::vector<double> result;
+        for(const auto& neuron : output.Neurons) {
+            result.push_back(neuron.value);
+        }
+        return result;
+    }
+
+    std::vector<double> predict(const std::vector<double>& inputs) {
+        DataPoint temp_dp(inputs, std::vector<double>(output.Neurons.size(), 0.0));
+        return predict(temp_dp);
+    }
+
+    int classify(const DataPoint& dp) {
+        auto result = predict(dp);
+        int maxIndex = 0;
+        for(size_t i = 1; i < result.size(); i++) {
+            if(result[i] > result[maxIndex]) {
+                maxIndex = i;
+            }
+        }
+        return maxIndex;
+    }
+
+    int classify(const std::vector<double>& inputs) {
+        auto result = predict(inputs);
+        int maxIndex = 0;
+        for(size_t i = 1; i < result.size(); i++) {
+            if(result[i] > result[maxIndex]) {
+                maxIndex = i;
+            }
+        }
+        return maxIndex;
+    }
+
+    void randomInit(double min_val = -1.0, double max_val = 1.0) {
+        for(auto& layer : hidden) {
+            for(auto& neuron : layer.Neurons) {
+                neuron.bias = min_val + (max_val - min_val) * ((double)rand() / RAND_MAX);
+            }
+            for(auto& weight_row : layer.weights) {
+                for(auto& weight : weight_row) {
+                    weight = min_val + (max_val - min_val) * ((double)rand() / RAND_MAX);
+                }
+            }
+        }
+        
+        for(auto& neuron : output.Neurons) {
+            neuron.bias = min_val + (max_val - min_val) * ((double)rand() / RAND_MAX);
+        }
+        for(auto& weight_row : output.weights) {
+            for(auto& weight : weight_row) {
+                weight = min_val + (max_val - min_val) * ((double)rand() / RAND_MAX);
+            }
+        }
+    }
+};
+
+}
+
+#endif
