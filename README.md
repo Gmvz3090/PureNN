@@ -2,7 +2,6 @@
 
 ![Version](https://img.shields.io/badge/version-1.21-blue.svg)
 ![C++](https://img.shields.io/badge/C++-11%2B-brightgreen.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)
 ![Platform](https://img.shields.io/badge/platform-linux%20%7C%20windows%20%7C%20macOS-lightgrey.svg)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-orange.svg)
