@@ -1,11 +1,51 @@
 # PureNN
 
-A lightweight, header-only neural network library implemented in pure C++ from scratch. PureNN provides a clean, educational implementation of feedforward neural networks with numerical gradient computation.
+![Version](https://img.shields.io/badge/version-1.21-blue.svg)
+![C++](https://img.shields.io/badge/C++-11%2B-brightgreen.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)
+![Platform](https://img.shields.io/badge/platform-linux%20%7C%20windows%20%7C%20macOS-lightgrey.svg)
+![Dependencies](https://img.shields.io/badge/dependencies-none-orange.svg)
+![Header Only](https://img.shields.io/badge/header--only-yes-yellow.svg)
+
+A lightweight, header-only neural network library implemented in pure C++ from scratch.
+
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Core Structures](#core-structures)
+  - [struct Neuron](#struct-neuron)
+  - [struct Layer](#struct-layer)
+  - [struct OutputLayer](#struct-outputlayer)
+  - [struct DataPoint](#struct-datapoint)
+  - [struct NeuralNetwork](#struct-neuralnetwork)
+- [API Reference](#api-reference)
+  - [Prediction Methods](#prediction-methods)
+  - [Evaluation Methods](#evaluation-methods)
+  - [Utility Methods](#utility-methods)
+  - [Internal Methods](#internal-methods)
+- [Usage Examples](#usage-examples)
+  - [Binary Classification with Custom Activations](#binary-classification-with-custom-activations)
+  - [Multi-class Classification with SoftMax](#multi-class-classification-with-softmax)
+  - [Deep Network with Multiple Activation Functions](#deep-network-with-multiple-activation-functions)
+  - [Using Default Activations](#using-default-activations)
+- [Network Architecture](#network-architecture)
+- [Uninstall](#uninstall)
+- [Files Structure](#files-structure)
+- [Activation Functions](#activation-functions)
+  - [Available Activation Functions](#available-activation-functions)
+  - [Activation Function Selection Guide](#activation-function-selection-guide)
+  - [Performance Considerations](#performance-considerations)
+  - [Common Activation Patterns](#common-activation-patterns)
+- [Future Improvements](#future-improvements)
 
 ## Features
 
 - **Header-only library**: No compilation required, just include and use
 - **Pure C++**: Zero external dependencies, uses only standard library
+- **Multiple activation functions**: ReLU, Sigmoid, SoftMax, TanH, SoftPlus, SiLU
 - **Multiple training modes**: Full-batch and mini-batch gradient descent
 - **Multiple output formats**: Classification, regression, and raw predictions
 
@@ -33,7 +73,8 @@ int main() {
     };
     
     // Create network: 2 inputs, 3 hidden neurons, 2 outputs
-    NeuralNetwork nn({2, 3, 2}, data, 0.2, 4);
+    // With custom activation functions: ReLU for hidden, Sigmoid for output
+    NeuralNetwork nn({2, 3, 2}, data, 0.2, 4, {"ReLU", "Sigmoid"});
     nn.randomInit();
     nn.trainnetworkbatching(100);
     
@@ -45,11 +86,9 @@ int main() {
 }
 ```
 
-## API Reference
+## Core Structures
 
-### Core Structures
-
-#### `struct Neuron`
+### `struct Neuron`
 
 Represents a single neuron with value and bias.
 
@@ -57,54 +96,55 @@ Represents a single neuron with value and bias.
 - `double value` - Current activation value of the neuron
 - `double bias` - Bias term added to weighted sum
 
-**Methods:**
-- `void activateSigm()` - Applies sigmoid activation function: `σ(x) = 1/(1 + e^(-x))`
-
 ---
 
-#### `struct Layer`
+### `struct Layer`
 
-Represents a layer of neurons with weighted connections.
+Represents a layer of neurons with weighted connections and configurable activation function.
 
 **Members:**
 - `std::vector<Neuron> Neurons` - Collection of neurons in this layer
 - `std::vector<std::vector<double>> weights` - Weight matrix [input][output]
 - `int outNodes` - Number of output neurons
 - `int inNodes` - Number of input connections
+- `std::string activationMethod` - Activation function for this layer
 
 **Constructors:**
-- `Layer()` - Default constructor, creates empty layer
-- `Layer(int in, int out)` - Creates layer with specified input/output dimensions
+- `Layer()` - Default constructor, creates empty layer with ReLU activation
+- `Layer(int in, int out, const std::string& activation = "ReLU")` - Creates layer with specified dimensions and activation function
 
 **Methods:**
-- `void setup(int in, int out)` - Configure layer dimensions after construction
-- `void CalcLayer(const Layer& PrevLayer)` - Forward propagation with sigmoid activation
+- `void setup(int in, int out, const std::string& activation = "ReLU")` - Configure layer dimensions and activation after construction
+- `void CalcLayer(const Layer& PrevLayer)` - Forward propagation with the layer's activation function
+- `void Activate()` - Apply the layer's activation function to all neurons
 
 ---
 
-#### `struct OutputLayer`
+### `struct OutputLayer`
 
-Specialized output layer with softmax activation for classification tasks.
+Specialized output layer with configurable activation function, typically used for classification or regression tasks.
 
 **Members:**
 - `std::vector<Neuron> Neurons` - Collection of output neurons
 - `std::vector<std::vector<double>> weights` - Weight matrix [input][output]
 - `int outNodes` - Number of output neurons
 - `int inNodes` - Number of input connections
+- `std::string activationMethod` - Activation function for this layer
 
 **Constructors:**
-- `OutputLayer()` - Default constructor, creates empty output layer
-- `OutputLayer(int in, int out)` - Creates output layer with specified dimensions
+- `OutputLayer()` - Default constructor, creates empty output layer with Sigmoid activation
+- `OutputLayer(int in, int out, const std::string& activation = "Sigmoid")` - Creates output layer with specified dimensions and activation
 
 **Methods:**
-- `void setup(int in, int out)` - Configure layer dimensions after construction
-- `void CalcLayer(const Layer& PrevLayer)` - Forward propagation with softmax activation
+- `void setup(int in, int out, const std::string& activation = "Sigmoid")` - Configure layer dimensions and activation after construction
+- `void CalcLayer(const Layer& PrevLayer)` - Forward propagation with the layer's activation function
+- `void Activate()` - Apply the layer's activation function to all neurons
 - `double NodeCost(double expected, double actual)` - Computes squared error for single node
 - `double Loss(const std::vector<double>& expected)` - Computes total loss for layer
 
 ---
 
-#### `struct DataPoint`
+### `struct DataPoint`
 
 Container for training data with input features and expected outputs.
 
@@ -117,7 +157,7 @@ Container for training data with input features and expected outputs.
 
 ---
 
-#### `struct NeuralNetwork`
+### `struct NeuralNetwork`
 
 Main neural network class coordinating all layers and training.
 
@@ -130,21 +170,23 @@ Main neural network class coordinating all layers and training.
 - `int batchsize` - Batch size for mini-batch training
 
 **Constructor:**
-- `NeuralNetwork(const std::vector<int>& structure, const std::vector<DataPoint>& training_data, double learnrate, int batch_size)`
+- `NeuralNetwork(const std::vector<int>& structure, const std::vector<DataPoint>& training_data, double learnrate, int batch_size, const std::vector<std::string>& activations = {})`
   - `structure`: Network topology (e.g., {2, 3, 2} = 2 inputs, 3 hidden, 2 outputs)
   - `training_data`: Training dataset
   - `learnrate`: Learning rate for gradient descent
   - `batch_size`: Size of mini-batches
+  - `activations`: Activation functions for each layer (optional, defaults to ReLU for hidden, Sigmoid for output)
 
-### Training Methods
+## API Reference
 
+**Training Methods:**
 - `void trainnetwork(int epochs)` - Full-batch gradient descent training
 - `void trainnetworkbatching(int epochs)` - Mini-batch gradient descent training
 - `void randomInit(double min_val = -1.0, double max_val = 1.0)` - Initialize weights and biases randomly
 
 ### Prediction Methods
 
-- `std::vector<double> predict(const DataPoint& dp)` - Get raw output probabilities
+- `std::vector<double> predict(const DataPoint& dp)` - Get raw output values
 - `std::vector<double> predict(const std::vector<double>& inputs)` - Predict from raw input vector
 - `int classify(const DataPoint& dp)` - Get predicted class index
 - `int classify(const std::vector<double>& inputs)` - Classify from raw input vector
@@ -169,7 +211,7 @@ Main neural network class coordinating all layers and training.
 
 ## Usage Examples
 
-### Binary Classification
+### Binary Classification with Custom Activations
 
 ```cpp
 std::vector<DataPoint> data = {
@@ -177,14 +219,15 @@ std::vector<DataPoint> data = {
     {{0.8, 0.9}, {1.0, 0.0}}   // Class 0
 };
 
-NeuralNetwork nn({2, 3, 2}, data, 0.2, 4);
+// Network with ReLU hidden layer and Sigmoid output
+NeuralNetwork nn({2, 3, 2}, data, 0.2, 4, {"ReLU", "Sigmoid"});
 nn.randomInit();
 nn.trainnetworkbatching(50);
 
 int result = nn.classify({0.5, 0.5});
 ```
 
-### Multi-class Classification
+### Multi-class Classification with SoftMax
 
 ```cpp
 std::vector<DataPoint> data = {
@@ -193,48 +236,46 @@ std::vector<DataPoint> data = {
     {{0.8, 0.9}, {0.0, 0.0, 1.0}}   // Class 2
 };
 
-NeuralNetwork nn({2, 4, 3}, data, 0.1, 2);
+// Network with TanH hidden layer and SoftMax output for multi-class classification
+NeuralNetwork nn({2, 4, 3}, data, 0.1, 2, {"TanH", "SoftMax"});
 nn.randomInit();
 nn.trainnetworkbatching(100);
 
 int predicted_class = nn.classify({0.6, 0.7});
 ```
 
-### Regression
+### Deep Network with Multiple Activation Functions
 
 ```cpp
 std::vector<DataPoint> data = {
-    {{1.0, 2.0}, {0.5}},
-    {{2.0, 3.0}, {1.0}},
-    {{3.0, 4.0}, {1.5}}
+    {{1.0, 2.0, 3.0}, {0.5, 1.0}},
+    {{2.0, 3.0, 4.0}, {1.0, 0.5}},
+    {{3.0, 4.0, 5.0}, {1.5, 0.8}}
 };
 
-NeuralNetwork nn({2, 4, 1}, data, 0.01, 1);
+// Deep network: 3 inputs, two hidden layers (8, 4 neurons), 2 outputs
+// ReLU -> SiLU -> Sigmoid activation sequence
+NeuralNetwork nn({3, 8, 4, 2}, data, 0.01, 1, {"ReLU", "SiLU", "Sigmoid"});
 nn.randomInit();
 nn.trainnetworkbatching(200);
 
-auto result = nn.predict({2.5, 3.5});
+auto result = nn.predict({2.5, 3.5, 4.5});
+```
+
+### Using Default Activations
+
+```cpp
+// If no activations specified, defaults to ReLU for hidden layers and Sigmoid for output
+NeuralNetwork nn({2, 3, 2}, data, 0.2, 4);
+nn.randomInit();
+nn.trainnetworkbatching(100);
 ```
 
 ## Network Architecture
 
 - **Input Layer**: Receives input features, no activation function
-- **Hidden Layers**: Use sigmoid activation function
-- **Output Layer**: Uses softmax activation for multi-class classification
-
-## Algorithm Details
-
-- **Forward Propagation**: Standard weighted sum → activation pattern
-- **Gradient Computation**: Numerical gradients using finite differences (h = 0.001)
-- **Optimization**: Gradient descent with configurable learning rate
-- **Loss Function**: Squared error loss
-- **Batch Training**: Supports both full-batch and mini-batch training
-
-## Compilation
-
-```bash
-g++ -std=c++11 your_program.cpp -o your_program
-```
+- **Hidden Layers**: Configurable activation functions (default: ReLU)
+- **Output Layer**: Configurable activation function (default: Sigmoid)
 
 ## Uninstall
 
@@ -253,12 +294,93 @@ PureNN/
 └── .gitignore      # Git ignore rules
 ```
 
-# Future improvements
+## Activation Functions
+
+PureNN supports multiple activation functions that can be configured per layer to optimize performance for different types of neural network tasks.
+
+### Available Activation Functions
+
+#### ReLU (Rectified Linear Unit)
+- **Formula**: `f(x) = max(0, x)`
+- **Best for**: Hidden layers in deep networks, general-purpose activation
+- **Usage**: `"ReLU"`
+
+#### Sigmoid
+- **Formula**: `f(x) = 1/(1 + e^(-x))`
+- **Best for**: Binary classification output layers, gates in LSTM networks
+- **Usage**: `"Sigmoid"`
+
+#### SoftMax
+- **Formula**: `f(x_i) = e^(x_i) / Σ(e^(x_j))` for all j
+- **Best for**: Multi-class classification output layers
+- **Usage**: `"SoftMax"`
+
+#### TanH (Hyperbolic Tangent)
+- **Formula**: `f(x) = (2/(1 + e^(-2x))) - 1`
+- **Best for**: Hidden layers, especially when you need zero-centered activations
+- **Usage**: `"TanH"`
+
+#### SoftPlus
+- **Formula**: `f(x) = log(1 + e^x)`
+- **Best for**: Hidden layers when smooth activation is preferred over ReLU
+- **Usage**: `"SoftPlus"`
+
+#### SiLU (Sigmoid Linear Unit / Swish)
+- **Formula**: `f(x) = x / (1 + e^(-x))`
+- **Best for**: Hidden layers in modern deep networks, replacement for ReLU
+- **Usage**: `"SiLU"`
+
+### Activation Function Selection Guide
+
+#### For Hidden Layers:
+- **ReLU**: Default choice, fast and effective for most cases
+- **SiLU**: Modern alternative to ReLU with potentially better performance
+- **TanH**: When you need zero-centered outputs
+- **SoftPlus**: When you need smooth, always-positive activations
+
+#### For Output Layers:
+- **Sigmoid**: Binary classification (outputs probability for positive class)
+- **SoftMax**: Multi-class classification (outputs probability distribution)
+- **ReLU**: Regression with non-negative outputs
+- **TanH**: Regression with outputs in range (-1, 1)
+- **None/Linear**: Standard regression (though not explicitly supported, achieved by not applying activation)
+
+### Performance Considerations
+
+- **Speed**: ReLU > Sigmoid ≈ TanH > SoftPlus > SiLU > SoftMax
+- **Memory**: All functions have similar memory requirements
+- **Gradient Flow**: SiLU > ReLU > SoftPlus > TanH > Sigmoid
+- **Numerical Stability**: All implementations use standard library functions for stability
+
+### Common Activation Patterns
+
+```cpp
+// Classification Networks
+{"ReLU", "ReLU", "SoftMax"}     // Multi-class classification
+{"ReLU", "ReLU", "Sigmoid"}     // Binary classification
+{"SiLU", "SiLU", "SoftMax"}     // Modern multi-class classification
+
+// Regression Networks
+{"ReLU", "ReLU", "ReLU"}        // Non-negative regression
+{"TanH", "TanH", "TanH"}        // Bounded regression
+{"SiLU", "SiLU", "SoftPlus"}    // Modern regression
+
+// Mixed Networks
+{"ReLU", "SiLU", "Sigmoid"}     // Hybrid approach
+{"TanH", "ReLU", "SoftMax"}     // Zero-centered to positive classification
+```
+
+## Future Improvements
 
 1. Adding Backpropagation
-2. Additional Activation Functions
-3. Saving Models
-4. Advanced Optimizers
-5. Multi-Threading
-6. Overfitting Prevention
-7. Progress Tracking (Visual Changes)
+2. Saving Models
+3. Advanced Optimizers
+4. Multi-Threading
+5. Overfitting Prevention
+6. Progress Tracking (Visual Changes)
+7. GPU Acceleration
+8. Batch Normalization
+
+---
+
+**PureNN v1.21** - Made with ❤️ for the C++ community

@@ -11,10 +11,6 @@ namespace purenn {
 struct Neuron {
     double value = 0;
     double bias = 0;
-    
-    void activateSigm() {
-        value = 1.0 / (1.0 + std::exp(-value));
-    }
 };
 
 struct Layer {
@@ -22,22 +18,23 @@ struct Layer {
     std::vector<std::vector<double>> weights; 
     int outNodes;
     int inNodes;
+    std::string activationMethod;
 
-    Layer() : inNodes(0), outNodes(0) {}
+    Layer() : inNodes(0), outNodes(0), activationMethod("ReLU") {}
 
-    Layer(int in, int out) {
+    Layer(int in, int out, const std::string& activation = "ReLU") 
+        : inNodes(in), outNodes(out), activationMethod(activation) {
         Neurons.resize(out);
-        inNodes = in;
-        outNodes = out;
         if(in > 0) {
             weights.resize(in, std::vector<double>(out));
         }
     }
 
-    void setup(int in, int out) {
+    void setup(int in, int out, const std::string& activation = "ReLU") {
         Neurons.resize(out);
         inNodes = in;
         outNodes = out;
+        activationMethod = activation;
         if(in > 0) {
             weights.resize(in, std::vector<double>(out));
         }
@@ -50,7 +47,45 @@ struct Layer {
                 Neurons[i].value += PrevLayer.Neurons[j].value * weights[j][i];
             }
             Neurons[i].value += Neurons[i].bias;
-            Neurons[i].activateSigm();
+        }
+        Activate();
+    }
+
+    void Activate() {
+        if(activationMethod == "ReLU") {
+            for(Neuron& neuron : Neurons) {
+                neuron.value = std::max(neuron.value, 0.0);
+            }
+        }
+        else if(activationMethod == "Sigmoid") {
+            for(Neuron& neuron : Neurons) {
+                neuron.value = 1.0 / (1.0 + std::exp(-neuron.value));
+            }
+        }
+        else if(activationMethod == "SoftMax") {
+            double sum = 0;
+            for(Neuron& n : Neurons) {
+                n.value = std::exp(n.value);
+                sum += n.value;
+            }
+            for(Neuron& n : Neurons) {
+                n.value /= sum;
+            }
+        }
+        else if(activationMethod == "TanH") {
+            for(Neuron& neuron : Neurons) {
+                neuron.value = (2 / (1 + std::exp(-2*neuron.value))) - 1;
+            }
+        }
+        else if(activationMethod == "SoftPlus") {
+            for(Neuron& neuron : Neurons) {
+                neuron.value = log(1 + std::exp(neuron.value));
+            }
+        }
+        else if(activationMethod == "SiLU") {
+            for(Neuron& neuron : Neurons) {
+                neuron.value = neuron.value / (1 + std::exp(-neuron.value));
+            }
         }
     }
 };
@@ -60,22 +95,23 @@ struct OutputLayer {
     std::vector<std::vector<double>> weights; 
     int outNodes;
     int inNodes;
+    std::string activationMethod;
 
-    OutputLayer() : inNodes(0), outNodes(0) {}
+    OutputLayer() : inNodes(0), outNodes(0), activationMethod("SoftMax") {}
 
-    OutputLayer(int in, int out) {
+    OutputLayer(int in, int out, const std::string& activation = "SoftMax") 
+        : inNodes(in), outNodes(out), activationMethod(activation) {
         Neurons.resize(out);
-        inNodes = in;
-        outNodes = out;
         if(in > 0) {
             weights.resize(in, std::vector<double>(out));
         }
     }
 
-    void setup(int in, int out) {
+    void setup(int in, int out, const std::string& activation = "SoftMax") {
         Neurons.resize(out);
         inNodes = in;
         outNodes = out;
+        activationMethod = activation;
         if(in > 0) {
             weights.resize(in, std::vector<double>(out));
         }
@@ -89,14 +125,44 @@ struct OutputLayer {
             }
             Neurons[i].value += Neurons[i].bias;
         }
-        
-        double sum = 0;
-        for(Neuron& n : Neurons) {
-            n.value = std::exp(n.value);
-            sum += n.value;
+        Activate();
+    }
+
+    void Activate() {
+        if(activationMethod == "ReLU") {
+            for(Neuron& neuron : Neurons) {
+                neuron.value = std::max(neuron.value, 0.0);
+            }
         }
-        for(Neuron& n : Neurons) {
-            n.value /= sum;
+        else if(activationMethod == "Sigmoid") {
+            for(Neuron& neuron : Neurons) {
+                neuron.value = 1.0 / (1.0 + std::exp(-neuron.value));
+            }
+        }
+        else if(activationMethod == "SoftMax") {
+            double sum = 0;
+            for(Neuron& n : Neurons) {
+                n.value = std::exp(n.value);
+                sum += n.value;
+            }
+            for(Neuron& n : Neurons) {
+                n.value /= sum;
+            }
+        }
+        else if(activationMethod == "TanH") {
+            for(Neuron& neuron : Neurons) {
+                neuron.value = (2 / (1 + std::exp(-2*neuron.value))) - 1;
+            }
+        }
+        else if(activationMethod == "SoftPlus") {
+            for(Neuron& neuron : Neurons) {
+                neuron.value = log(1 + std::exp(neuron.value));
+            }
+        }
+        else if(activationMethod == "SiLU") {
+            for(Neuron& neuron : Neurons) {
+                neuron.value = neuron.value / (1 + std::exp(-neuron.value));
+            }
         }
     }
 
@@ -131,16 +197,26 @@ struct NeuralNetwork {
 
     NeuralNetwork(const std::vector<int>& structure, 
                   const std::vector<DataPoint>& training_data,
-                  double learnrate, int batch_size) 
+                  double learnrate, int batch_size,
+                  const std::vector<std::string>& activations = {}) 
         : learn(learnrate), batchsize(batch_size), train(training_data) {
         
         input = Layer(0, structure[0]);
-        output = OutputLayer(structure[structure.size()-2], structure[structure.size()-1]);
         
         for(size_t i = 1; i < structure.size() - 1; i++) {
-            Layer hiddenlayer = Layer(structure[i-1], structure[i]);
+            std::string activation = "ReLU"; // default
+            if(i-1 < activations.size()) {
+                activation = activations[i-1];
+            }
+            Layer hiddenlayer = Layer(structure[i-1], structure[i], activation);
             hidden.push_back(hiddenlayer);
         }
+        
+        std::string outputActivation = "SoftMax"; // default
+        if(!activations.empty() && activations.size() >= structure.size() - 1) {
+            outputActivation = activations.back();
+        }
+        output = OutputLayer(structure[structure.size()-2], structure[structure.size()-1], outputActivation);
     }
 
     void reset() {
