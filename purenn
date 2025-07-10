@@ -5,39 +5,78 @@
 #include <cmath>
 #include <iostream>
 #include <algorithm>
+#include <string>
+#include <unordered_map>
 
 namespace purenn {
+
+enum class ActivationType { 
+    ReLU, 
+    Sigmoid, 
+    SoftMax, 
+    TanH, 
+    SoftPlus, 
+    SiLU,
+    Linear
+};
+
+// Helper function to convert string to enum
+ActivationType stringToActivation(const std::string& str) {
+    static std::unordered_map<std::string, ActivationType> activationMap = {
+        {"ReLU", ActivationType::ReLU},
+        {"Sigmoid", ActivationType::Sigmoid},
+        {"SoftMax", ActivationType::SoftMax},
+        {"TanH", ActivationType::TanH},
+        {"SoftPlus", ActivationType::SoftPlus},
+        {"SiLU", ActivationType::SiLU},
+        {"Linear", ActivationType::Linear}
+    };
+    
+    auto it = activationMap.find(str);
+    return (it != activationMap.end()) ? it->second : ActivationType::ReLU;
+}
 
 struct Neuron {
     double value = 0;
     double bias = 0;
+    double gradient = 0;  // For backpropagation
 };
 
 struct Layer {
     std::vector<Neuron> Neurons;
     std::vector<std::vector<double>> weights; 
+    std::vector<std::vector<double>> weightGradients;  // For backpropagation
     int outNodes;
     int inNodes;
-    std::string activationMethod;
+    ActivationType activationType;
 
-    Layer() : inNodes(0), outNodes(0), activationMethod("ReLU") {}
+    Layer() : inNodes(0), outNodes(0), activationType(ActivationType::ReLU) {}
 
-    Layer(int in, int out, const std::string& activation = "ReLU") 
-        : inNodes(in), outNodes(out), activationMethod(activation) {
+    Layer(int in, int out, ActivationType activation = ActivationType::ReLU) 
+        : inNodes(in), outNodes(out), activationType(activation) {
         Neurons.resize(out);
         if(in > 0) {
             weights.resize(in, std::vector<double>(out));
+            weightGradients.resize(in, std::vector<double>(out, 0.0));
+        }
+    }
+
+    Layer(int in, int out, const std::string& activation = "ReLU") 
+        : Layer(in, out, stringToActivation(activation)) {}
+
+    void setup(int in, int out, ActivationType activation = ActivationType::ReLU) {
+        Neurons.resize(out);
+        inNodes = in;
+        outNodes = out;
+        activationType = activation;
+        if(in > 0) {
+            weights.resize(in, std::vector<double>(out));
+            weightGradients.resize(in, std::vector<double>(out, 0.0));
         }
     }
 
     void setup(int in, int out, const std::string& activation = "ReLU") {
-        Neurons.resize(out);
-        inNodes = in;
-        outNodes = out;
-        activationMethod = activation;
-        if(in > 0) {
-            weights.resize(in, std::vector<double>(out));
-        }
+        setup(in, out, stringToActivation(activation));
     }
 
     void CalcLayer(const Layer& PrevLayer) {
@@ -52,119 +91,104 @@ struct Layer {
     }
 
     void Activate() {
-        if(activationMethod == "ReLU") {
-            for(Neuron& neuron : Neurons) {
-                neuron.value = std::max(neuron.value, 0.0);
+        switch(activationType) {
+            case ActivationType::ReLU:
+                for(Neuron& neuron : Neurons) {
+                    neuron.value = std::max(neuron.value, 0.0);
+                }
+                break;
+                
+            case ActivationType::Sigmoid:
+                for(Neuron& neuron : Neurons) {
+                    neuron.value = 1.0 / (1.0 + std::exp(-neuron.value));
+                }
+                break;
+                
+            case ActivationType::SoftMax: {
+                double sum = 0;
+                double maxVal = Neurons[0].value;
+                for(const auto& n : Neurons) {
+                    maxVal = std::max(maxVal, n.value);
+                }
+                for(Neuron& n : Neurons) {
+                    n.value = std::exp(n.value - maxVal);  // Numerical stability
+                    sum += n.value;
+                }
+                for(Neuron& n : Neurons) {
+                    n.value /= sum;
+                }
+                break;
             }
+            
+            case ActivationType::TanH:
+                for(Neuron& neuron : Neurons) {
+                    neuron.value = std::tanh(neuron.value);
+                }
+                break;
+                
+            case ActivationType::SoftPlus:
+                for(Neuron& neuron : Neurons) {
+                    neuron.value = std::log(1 + std::exp(neuron.value));
+                }
+                break;
+                
+            case ActivationType::SiLU:
+                for(Neuron& neuron : Neurons) {
+                    neuron.value = neuron.value / (1 + std::exp(-neuron.value));
+                }
+                break;
+                
+            case ActivationType::Linear:
+                break;
         }
-        else if(activationMethod == "Sigmoid") {
-            for(Neuron& neuron : Neurons) {
-                neuron.value = 1.0 / (1.0 + std::exp(-neuron.value));
+    }
+
+    double activationDerivative(double x) const {
+        switch(activationType) {
+            case ActivationType::ReLU:
+                return x > 0 ? 1.0 : 0.0;
+                
+            case ActivationType::Sigmoid: {
+                double sig = 1.0 / (1.0 + std::exp(-x));
+                return sig * (1.0 - sig);
             }
-        }
-        else if(activationMethod == "SoftMax") {
-            double sum = 0;
-            for(Neuron& n : Neurons) {
-                n.value = std::exp(n.value);
-                sum += n.value;
+            
+            case ActivationType::TanH: {
+                double th = std::tanh(x);
+                return 1.0 - th * th;
             }
-            for(Neuron& n : Neurons) {
-                n.value /= sum;
+            
+            case ActivationType::SoftPlus:
+                return 1.0 / (1.0 + std::exp(-x));
+                
+            case ActivationType::SiLU: {
+                double sigmoid = 1.0 / (1.0 + std::exp(-x));
+                return sigmoid * (1.0 + x * (1.0 - sigmoid));
             }
-        }
-        else if(activationMethod == "TanH") {
-            for(Neuron& neuron : Neurons) {
-                neuron.value = (2 / (1 + std::exp(-2*neuron.value))) - 1;
-            }
-        }
-        else if(activationMethod == "SoftPlus") {
-            for(Neuron& neuron : Neurons) {
-                neuron.value = log(1 + std::exp(neuron.value));
-            }
-        }
-        else if(activationMethod == "SiLU") {
-            for(Neuron& neuron : Neurons) {
-                neuron.value = neuron.value / (1 + std::exp(-neuron.value));
-            }
+            
+            case ActivationType::Linear:
+                return 1.0;
+                
+            case ActivationType::SoftMax:
+                // SoftMax derivative is handled separately in backpropagation
+                return 1.0;
+                
+            default:
+                return 1.0;
         }
     }
 };
 
-struct OutputLayer {
-    std::vector<Neuron> Neurons;
-    std::vector<std::vector<double>> weights; 
-    int outNodes;
-    int inNodes;
-    std::string activationMethod;
-
-    OutputLayer() : inNodes(0), outNodes(0), activationMethod("SoftMax") {}
-
-    OutputLayer(int in, int out, const std::string& activation = "SoftMax") 
-        : inNodes(in), outNodes(out), activationMethod(activation) {
-        Neurons.resize(out);
-        if(in > 0) {
-            weights.resize(in, std::vector<double>(out));
-        }
+struct OutputLayer : public Layer {
+    OutputLayer() : Layer() {
+        activationType = ActivationType::Sigmoid;
     }
 
-    void setup(int in, int out, const std::string& activation = "SoftMax") {
-        Neurons.resize(out);
-        inNodes = in;
-        outNodes = out;
-        activationMethod = activation;
-        if(in > 0) {
-            weights.resize(in, std::vector<double>(out));
-        }
-    }
+    OutputLayer(int in, int out, ActivationType activation = ActivationType::Sigmoid) 
+        : Layer(in, out, activation) {}
 
-    void CalcLayer(const Layer& PrevLayer) {
-        for(size_t i = 0; i < Neurons.size(); ++i) {
-            Neurons[i].value = 0;
-            for(size_t j = 0; j < PrevLayer.Neurons.size(); ++j) {
-                Neurons[i].value += PrevLayer.Neurons[j].value * weights[j][i];
-            }
-            Neurons[i].value += Neurons[i].bias;
-        }
-        Activate();
-    }
-
-    void Activate() {
-        if(activationMethod == "ReLU") {
-            for(Neuron& neuron : Neurons) {
-                neuron.value = std::max(neuron.value, 0.0);
-            }
-        }
-        else if(activationMethod == "Sigmoid") {
-            for(Neuron& neuron : Neurons) {
-                neuron.value = 1.0 / (1.0 + std::exp(-neuron.value));
-            }
-        }
-        else if(activationMethod == "SoftMax") {
-            double sum = 0;
-            for(Neuron& n : Neurons) {
-                n.value = std::exp(n.value);
-                sum += n.value;
-            }
-            for(Neuron& n : Neurons) {
-                n.value /= sum;
-            }
-        }
-        else if(activationMethod == "TanH") {
-            for(Neuron& neuron : Neurons) {
-                neuron.value = (2 / (1 + std::exp(-2*neuron.value))) - 1;
-            }
-        }
-        else if(activationMethod == "SoftPlus") {
-            for(Neuron& neuron : Neurons) {
-                neuron.value = log(1 + std::exp(neuron.value));
-            }
-        }
-        else if(activationMethod == "SiLU") {
-            for(Neuron& neuron : Neurons) {
-                neuron.value = neuron.value / (1 + std::exp(-neuron.value));
-            }
-        }
-    }
+    OutputLayer(int in, int out, const std::string& activation = "Sigmoid") 
+        : Layer(in, out, stringToActivation(activation)) {}
 
     double NodeCost(double expected, double actual) {
         return (actual - expected) * (actual - expected);
@@ -177,6 +201,19 @@ struct OutputLayer {
         }
         return totloss;
     }
+
+    void calculateOutputGradients(const std::vector<double>& expected) {
+        for(size_t i = 0; i < Neurons.size(); ++i) {
+            double error = Neurons[i].value - expected[i];
+            
+            if(activationType == ActivationType::SoftMax) {
+                Neurons[i].gradient = error;
+            } else {
+                // For other activations with squared error
+                Neurons[i].gradient = error * activationDerivative(Neurons[i].value);
+            }
+        }
+    }
 };
 
 struct DataPoint {
@@ -185,6 +222,12 @@ struct DataPoint {
     
     DataPoint(const std::vector<double>& in, const std::vector<double>& exp) 
         : inputs(in), expected(exp) {}
+
+    // Convenience constructor for binary classification
+    DataPoint(double in1, double in2, bool classification) {
+        inputs = {in1, in2};
+        expected = classification ? std::vector<double>{1.0, 0.0} : std::vector<double>{0.0, 1.0};
+    }
 };
 
 struct NeuralNetwork {
@@ -194,27 +237,29 @@ struct NeuralNetwork {
     std::vector<DataPoint> train;
     double learn;
     int batchsize;
+    bool useBackprop;
 
     NeuralNetwork(const std::vector<int>& structure, 
                   const std::vector<DataPoint>& training_data,
                   double learnrate, int batch_size,
-                  const std::vector<std::string>& activations = {}) 
-        : learn(learnrate), batchsize(batch_size), train(training_data) {
+                  const std::vector<std::string>& activations = {},
+                  bool use_backprop = true) 
+        : learn(learnrate), batchsize(batch_size), train(training_data), useBackprop(use_backprop) {
         
-        input = Layer(0, structure[0]);
+        input = Layer(0, structure[0], ActivationType::Linear);
         
         for(size_t i = 1; i < structure.size() - 1; i++) {
-            std::string activation = "ReLU"; // default
+            ActivationType activation = ActivationType::ReLU; // default
             if(i-1 < activations.size()) {
-                activation = activations[i-1];
+                activation = stringToActivation(activations[i-1]);
             }
             Layer hiddenlayer = Layer(structure[i-1], structure[i], activation);
             hidden.push_back(hiddenlayer);
         }
         
-        std::string outputActivation = "SoftMax"; // default
+        ActivationType outputActivation = ActivationType::Sigmoid; // default
         if(!activations.empty() && activations.size() >= structure.size() - 1) {
-            outputActivation = activations.back();
+            outputActivation = stringToActivation(activations.back());
         }
         output = OutputLayer(structure[structure.size()-2], structure[structure.size()-1], outputActivation);
     }
@@ -222,14 +267,17 @@ struct NeuralNetwork {
     void reset() {
         for(Neuron& n : input.Neurons) {
             n.value = 0;
+            n.gradient = 0;
         }
         for(Layer& layer : hidden) {
             for(Neuron& n : layer.Neurons) {
                 n.value = 0;
+                n.gradient = 0;
             }
         }
         for(Neuron& n : output.Neurons) {
             n.value = 0;
+            n.gradient = 0;
         }
     }
 
@@ -239,7 +287,7 @@ struct NeuralNetwork {
         }
     }
 
-    double pointloss(const DataPoint& dp) {
+    void forwardPass(const DataPoint& dp) {
         reset();
         setInputs(dp);
 
@@ -252,7 +300,79 @@ struct NeuralNetwork {
         } else {
             output.CalcLayer(input);
         }
+    }
 
+    void backwardPass(const DataPoint& dp) {
+        // Calculate output layer gradients
+        output.calculateOutputGradients(dp.expected);
+
+        // Backpropagate through hidden layers
+        for(int layerIdx = hidden.size() - 1; layerIdx >= 0; layerIdx--) {
+            Layer& currentLayer = hidden[layerIdx];
+            
+            // Calculate gradients for current layer neurons
+            for(size_t neuronIdx = 0; neuronIdx < currentLayer.Neurons.size(); neuronIdx++) {
+                double gradient = 0.0;
+                
+                if(layerIdx == (int)hidden.size() - 1) {
+                    // Last hidden layer - gradients come from output layer
+                    for(size_t outputIdx = 0; outputIdx < output.Neurons.size(); outputIdx++) {
+                        gradient += output.Neurons[outputIdx].gradient * output.weights[neuronIdx][outputIdx];
+                    }
+                } else {
+                    // Other hidden layers - gradients come from next hidden layer
+                    Layer& nextLayer = hidden[layerIdx + 1];
+                    for(size_t nextNeuronIdx = 0; nextNeuronIdx < nextLayer.Neurons.size(); nextNeuronIdx++) {
+                        gradient += nextLayer.Neurons[nextNeuronIdx].gradient * nextLayer.weights[neuronIdx][nextNeuronIdx];
+                    }
+                }
+                
+                currentLayer.Neurons[neuronIdx].gradient = gradient * currentLayer.activationDerivative(currentLayer.Neurons[neuronIdx].value);
+            }
+        }
+    }
+
+    void updateWeights() {
+        const Layer& prevLayer = hidden.empty() ? input : hidden.back();
+        
+        for(size_t i = 0; i < prevLayer.Neurons.size(); i++) {
+            for(size_t j = 0; j < output.Neurons.size(); j++) {
+                output.weights[i][j] -= learn * output.Neurons[j].gradient * prevLayer.Neurons[i].value;
+            }
+        }
+        
+        for(size_t j = 0; j < output.Neurons.size(); j++) {
+            output.Neurons[j].bias -= learn * output.Neurons[j].gradient;
+        }
+
+        for(size_t layerIdx = 0; layerIdx < hidden.size(); layerIdx++) {
+            Layer& currentLayer = hidden[layerIdx];
+            const Layer& prevLayer = (layerIdx == 0) ? input : hidden[layerIdx - 1];
+            
+            for(size_t i = 0; i < prevLayer.Neurons.size(); i++) {
+                for(size_t j = 0; j < currentLayer.Neurons.size(); j++) {
+                    currentLayer.weights[i][j] -= learn * currentLayer.Neurons[j].gradient * prevLayer.Neurons[i].value;
+                }
+            }
+            
+            for(size_t j = 0; j < currentLayer.Neurons.size(); j++) {
+                currentLayer.Neurons[j].bias -= learn * currentLayer.Neurons[j].gradient;
+            }
+        }
+    }
+
+    void trainSingleDataPoint(const DataPoint& dp) {
+        if(useBackprop) {
+            forwardPass(dp);
+            backwardPass(dp);
+            updateWeights();
+        } else {
+            adjust();
+        }
+    }
+
+    double pointloss(const DataPoint& dp) {
+        forwardPass(dp);
         return output.Loss(dp.expected);
     }
 
@@ -274,6 +394,7 @@ struct NeuralNetwork {
         return res / (end_idx - start_idx);
     }
 
+    // Original finite difference methods (kept for compatibility)
     double getGradient(double& weight) {
         double h = 0.001;
         double original = weight;
@@ -329,38 +450,59 @@ struct NeuralNetwork {
     }
 
     void adjustBatch(int start_idx, int batch_size) {
-        for(size_t i = 0; i < hidden.size(); ++i) {
-            for(size_t j = 0; j < hidden[i].weights.size(); ++j) {
-                for(size_t k = 0; k < hidden[i].weights[j].size(); ++k) {
-                    double gradient = getBatchGradient(hidden[i].weights[j][k], start_idx, batch_size);
-                    hidden[i].weights[j][k] -= gradient * learn;
+        if(useBackprop) {
+            // Reset gradients
+            for(auto& layer : hidden) {
+                for(auto& row : layer.weightGradients) {
+                    std::fill(row.begin(), row.end(), 0.0);
                 }
             }
-        }
 
-        for(size_t i = 0; i < output.weights.size(); i++) {
-            for(size_t j = 0; j < output.weights[i].size(); j++) {
-                double gradient = getBatchGradient(output.weights[i][j], start_idx, batch_size);
-                output.weights[i][j] -= learn * gradient;
+            // Accumulate gradients over batch
+            int end_idx = std::min(start_idx + batch_size, (int)train.size());
+            for(int i = start_idx; i < end_idx; i++) {
+                trainSingleDataPoint(train[i]);
             }
-        }
-
-        for(size_t i = 0; i < hidden.size(); ++i) {
-            for(size_t j = 0; j < hidden[i].Neurons.size(); ++j) {
-                double gradient = getBatchGradient(hidden[i].Neurons[j].bias, start_idx, batch_size);
-                hidden[i].Neurons[j].bias -= learn * gradient;
+        } else {
+            for(size_t i = 0; i < hidden.size(); ++i) {
+                for(size_t j = 0; j < hidden[i].weights.size(); ++j) {
+                    for(size_t k = 0; k < hidden[i].weights[j].size(); ++k) {
+                        double gradient = getBatchGradient(hidden[i].weights[j][k], start_idx, batch_size);
+                        hidden[i].weights[j][k] -= gradient * learn;
+                    }
+                }
             }
-        }
 
-        for(size_t i = 0; i < output.Neurons.size(); ++i) {
-            double gradient = getBatchGradient(output.Neurons[i].bias, start_idx, batch_size);
-            output.Neurons[i].bias -= learn * gradient;
+            for(size_t i = 0; i < output.weights.size(); i++) {
+                for(size_t j = 0; j < output.weights[i].size(); j++) {
+                    double gradient = getBatchGradient(output.weights[i][j], start_idx, batch_size);
+                    output.weights[i][j] -= learn * gradient;
+                }
+            }
+
+            for(size_t i = 0; i < hidden.size(); ++i) {
+                for(size_t j = 0; j < hidden[i].Neurons.size(); ++j) {
+                    double gradient = getBatchGradient(hidden[i].Neurons[j].bias, start_idx, batch_size);
+                    hidden[i].Neurons[j].bias -= learn * gradient;
+                }
+            }
+
+            for(size_t i = 0; i < output.Neurons.size(); ++i) {
+                double gradient = getBatchGradient(output.Neurons[i].bias, start_idx, batch_size);
+                output.Neurons[i].bias -= learn * gradient;
+            }
         }
     }
 
     void trainnetwork(int epochs) {
         for(int i = 0; i < epochs; ++i) {
-            adjust();
+            if(useBackprop) {
+                for(const auto& dp : train) {
+                    trainSingleDataPoint(dp);
+                }
+            } else {
+                adjust();
+            }
             std::cout << "EPOCH: " << i << ", LOSS: " << getLoss() << std::endl;
         }
     }
@@ -375,19 +517,7 @@ struct NeuralNetwork {
     }
 
     std::vector<double> predict(const DataPoint& dp) {
-        reset();
-        setInputs(dp);
-
-        if(!hidden.empty()) {
-            hidden[0].CalcLayer(input);
-            for(size_t i = 1; i < hidden.size(); i++) {
-                hidden[i].CalcLayer(hidden[i-1]);
-            }
-            output.CalcLayer(hidden[hidden.size() - 1]);
-        } else {
-            output.CalcLayer(input);
-        }
-
+        forwardPass(dp);
         std::vector<double> result;
         for(const auto& neuron : output.Neurons) {
             result.push_back(neuron.value);
@@ -422,6 +552,11 @@ struct NeuralNetwork {
         return maxIndex;
     }
 
+    bool classifyBinary(const std::vector<double>& inputs) {
+        auto result = predict(inputs);
+        return result[0] > result[1];
+    }
+
     void randomInit(double min_val = -1.0, double max_val = 1.0) {
         for(auto& layer : hidden) {
             for(auto& neuron : layer.Neurons) {
@@ -442,6 +577,10 @@ struct NeuralNetwork {
                 weight = min_val + (max_val - min_val) * ((double)rand() / RAND_MAX);
             }
         }
+    }
+
+    void setBackpropagation(bool enable) {
+        useBackprop = enable;
     }
 };
 
