@@ -7,7 +7,7 @@
 ![Dependencies](https://img.shields.io/badge/dependencies-none-orange.svg)
 ![Header Only](https://img.shields.io/badge/header--only-yes-yellow.svg)
 
-A lightweight, header-only neural network library implemented in pure C++ from scratch with efficient backpropagation.
+A lightweight, header-only neural network library implemented in pure C++ from scratch.
 
 ## Table of Contents
 
