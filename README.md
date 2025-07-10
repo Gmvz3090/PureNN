@@ -6,7 +6,6 @@
 ![Platform](https://img.shields.io/badge/platform-linux%20%7C%20windows%20%7C%20macOS-lightgrey.svg)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-orange.svg)
 ![Header Only](https://img.shields.io/badge/header--only-yes-yellow.svg)
-![Backpropagation](https://img.shields.io/badge/backpropagation-enabled-brightgreen.svg)
 
 A lightweight, header-only neural network library implemented in pure C++ from scratch with efficient backpropagation.
 
